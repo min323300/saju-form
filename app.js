@@ -1,347 +1,241 @@
-/**
- * 사주 자동분석 플랫폼 - Apps Script 전체 코드
- * 수정 v5: parseAiSections_ 강화 + Logger 디버그 추가
- */
+// =============================================
+// 설정: Apps Script 배포 URL
+// =============================================
+const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxH4yOePu4gZes7-Kdm7x3fWqd4X3G_OpmvmFRny0f3sKmNSQadV4TIOCEadTdJ5IMZ/exec";
 
-const SHEET_NAME = "responses";
+// =============================================
+// 전역 타이머 변수
+// =============================================
+var _timer = null;
+var _startTime = 0;
 
-const EXTRA_HEADERS = [
-  "AI처리상태", "AI처리시간", "사주요약", "건강주의",
-  "추천음식", "피해야할음식", "상품추천키워드", "홍보문구"
+var _stages = [
+  { at: 0,  text: "입력 정보를 전송하고 있습니다..." },
+  { at: 6,  text: "사주 오행을 분석하고 있습니다..." },
+  { at: 18, text: "건강 및 음식 궁합을 계산 중입니다..." },
+  { at: 35, text: "맞춤 추천 결과를 생성하고 있습니다..." },
+  { at: 55, text: "마무리 정리 중입니다..." }
 ];
 
-const OPENAI_MODEL = "gpt-4o-mini";
+// =============================================
+// 폼 제출 핸들러
+// =============================================
+document.getElementById("saju-form").addEventListener("submit", async function (e) {
+  e.preventDefault();
 
-// =============================================
-// 시트 연결
-// =============================================
-function getSheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) sheet = ss.insertSheet(SHEET_NAME);
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow([
-      "등록일","유입경로","이름","전화번호","생년월일",
-      "출생시간","음양력","성별","메모","접속정보",
-      ...EXTRA_HEADERS
-    ]);
-  } else {
-    ensureExtraHeaders_(sheet);
+  var form        = e.target;
+  var name        = form.name.value.trim();
+  var phone       = form.phone.value.trim();
+  var birthdate   = form.birthdate.value.trim();
+  var calType     = (form.querySelector('input[name="calendar_type"]:checked') || {}).value;
+  var gender      = (form.querySelector('input[name="gender"]:checked') || {}).value;
+  var birthtime   = form.birthtime.value.trim();
+  var memo        = form.memo.value.trim();
+
+  if (!name || !phone || !birthdate || !calType || !gender) {
+    alert("필수 항목을 모두 입력해 주세요.");
+    return;
   }
-  return sheet;
-}
 
-function ensureExtraHeaders_(sheet) {
-  const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const missing = EXTRA_HEADERS.filter(h => !headerRow.includes(h));
-  if (missing.length > 0) {
-    sheet.getRange(1, sheet.getLastColumn() + 1, 1, missing.length).setValues([missing]);
-  }
-}
+  var ua = navigator.userAgent.substring(0, 200);
+  var params = new URLSearchParams({
+    name: name, phone: phone, birthdate: birthdate, birthtime: birthtime,
+    calendar_type: calType, gender: gender, memo: memo,
+    source: "github_pages", user_agent: ua
+  });
 
-// =============================================
-// doPost: 저장 + AI 분석
-// =============================================
-function doPost(e) {
+  showSection("loading");
+  startTimer();
+
   try {
-    const params = e && e.parameter ? e.parameter : {};
-    const createdAt = new Date();
+    // no-cors POST
+    await fetch(APPS_SCRIPT_WEBAPP_URL, {
+      method: "POST", mode: "no-cors",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString()
+    });
 
-    const name      = (params.name       || "").trim();
-    const phone     = (params.phone      || "").trim();
-    const birthdate = (params.birthdate  || "").trim();
-    const birthtime = (params.birthtime  || "").trim();
-    const memo      = (params.memo       || "").trim();
-    const ua        = (params.user_agent || "").substring(0, 200);
-
-    let calendarType = (params.calendar_type || "").trim();
-    let gender       = (params.gender        || "").trim();
-    let source       = (params.source        || "").trim();
-
-    if (calendarType === "solar") calendarType = "양력";
-    if (calendarType === "lunar") calendarType = "음력";
-    if (gender === "male")        gender = "남성";
-    if (gender === "female")      gender = "여성";
-    if (source === "github_pages") source = "홈페이지";
-    if (!source) source = "기타";
-
-    if (!name || !phone || !birthdate || !calendarType || !gender) {
-      return json_({ ok: false, error: "missing_required_fields" });
-    }
-
-    const sheet = getSheet_();
-    sheet.appendRow([
-      createdAt, source, name, phone, "'" + birthdate,
-      birthtime, calendarType, gender, memo, ua,
-      "PENDING", "", "", "", "", "", "", ""
-    ]);
-
-    const rowIndex = sheet.getLastRow();
-
-    try {
-      runAiForRow_(sheet, rowIndex);
-    } catch (aiErr) {
-      writeAiError_(sheet, rowIndex, String(aiErr));
-    }
-
-    return json_({ ok: true, row: rowIndex });
+    // POST 후 초기 대기 (모바일 고려해 3초로 단축)
+    await sleep(3000);
+    await pollResult(name, phone, birthdate);
 
   } catch (err) {
-    return json_({ ok: false, error: String(err) });
+    stopTimer();
+    showError("전송 오류가 발생했습니다.<br>" + err.message);
+  }
+});
+
+// =============================================
+// 타이머
+// =============================================
+function startTimer() {
+  _startTime = Date.now();
+  if (_timer) clearInterval(_timer);
+  updateTimerUI();
+  _timer = setInterval(updateTimerUI, 1000);
+}
+
+function updateTimerUI() {
+  var elapsed = Math.floor((Date.now() - _startTime) / 1000);
+  var pct     = Math.min(92, Math.round((elapsed / 90) * 100));
+
+  var barEl   = document.getElementById("progress-bar");
+  var timeEl  = document.getElementById("elapsed-time");
+  var stageEl = document.getElementById("loading-stage");
+
+  if (barEl)   barEl.style.width = pct + "%";
+  if (timeEl)  timeEl.textContent = elapsed + "초 경과";
+
+  if (stageEl) {
+    var msg = _stages[0].text;
+    for (var i = 0; i < _stages.length; i++) {
+      if (elapsed >= _stages[i].at) msg = _stages[i].text;
+    }
+    stageEl.textContent = msg;
+  }
+}
+
+function stopTimer(done) {
+  if (_timer) { clearInterval(_timer); _timer = null; }
+  if (done) {
+    var barEl = document.getElementById("progress-bar");
+    if (barEl) barEl.style.width = "100%";
   }
 }
 
 // =============================================
-// doGet: 결과 조회 + 헬스체크
+// GET 폴링 - 모바일 최적화
+// 최대 35회 × 3초 간격 = 최대 105초 대기
 // =============================================
-function doGet(e) {
-  const params = e && e.parameter ? e.parameter : {};
-  const action = params.action || "";
+async function pollResult(name, phone, birthdate) {
+  var maxTry   = 35;   // 횟수 늘림 (기존 25)
+  var interval = 3000; // 간격 줄임 (기존 4000)
+  var failCount = 0;   // 네트워크 실패 카운트
+  var maxFail   = 5;   // 연속 실패 5회까지 허용
 
-  if (action === "getResult") {
-    const phone     = (params.phone     || "").trim();
-    const birthdate = (params.birthdate || "").trim();
-
-    if (!phone || !birthdate) {
-      return json_({ ok: false, error: "phone/birthdate 필요" });
-    }
-
+  for (var i = 0; i < maxTry; i++) {
     try {
-      const sheet   = getSheet_();
-      const header  = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      const col     = (name) => header.indexOf(name) + 1;
-      const lastRow = sheet.getLastRow();
+      var url = APPS_SCRIPT_WEBAPP_URL
+              + "?action=getResult"
+              + "&phone="     + encodeURIComponent(phone)
+              + "&birthdate=" + encodeURIComponent(birthdate);
 
-      for (let r = lastRow; r >= 2; r--) {
-        const rowPhone = String(sheet.getRange(r, col("전화번호")).getValue()).trim();
-        const rawBd    = sheet.getRange(r, col("생년월일")).getValue();
+      var res  = await fetch(url);
+      var data = await res.json();
 
-        let rowBd = "";
-        if (rawBd instanceof Date) {
-          rowBd = Utilities.formatDate(rawBd, "Asia/Seoul", "yyyy-MM-dd");
-        } else {
-          rowBd = String(rawBd).trim().replace(/^'/, "");
-          if (rowBd.includes("T")) rowBd = rowBd.substring(0, 10);
-        }
+      failCount = 0; // 성공하면 실패 카운트 초기화
 
-        if (rowPhone === phone && rowBd === birthdate) {
-          const status = sheet.getRange(r, col("AI처리상태")).getValue();
-
-          if (status === "DONE") {
-            return json_({
-              ok: true, status: "DONE",
-              result: {
-                summary:         sheet.getRange(r, col("사주요약")).getValue(),
-                health:          sheet.getRange(r, col("건강주의")).getValue(),
-                foods:           sheet.getRange(r, col("추천음식")).getValue(),
-                avoid:           sheet.getRange(r, col("피해야할음식")).getValue(),
-                productKeywords: sheet.getRange(r, col("상품추천키워드")).getValue(),
-                promo:           sheet.getRange(r, col("홍보문구")).getValue()
-              }
-            });
-          }
-          if (status === "ERROR") return json_({ ok: true, status: "ERROR" });
-          return json_({ ok: true, status: "PENDING" });
-        }
+      if (data.ok && data.status === "DONE" && data.result) {
+        stopTimer(true);
+        renderResult(name, data.result);
+        return;
+      }
+      if (data.status === "ERROR") {
+        stopTimer(false);
+        showError("AI 분석 중 오류가 발생했습니다.<br>다시 시도해 주세요.");
+        return;
       }
 
-      return json_({ ok: true, status: "PENDING" });
-
-    } catch (err) {
-      return json_({ ok: false, error: String(err) });
+    } catch (_) {
+      failCount++;
+      // 연속 실패가 많으면 간격을 늘려서 재시도
+      if (failCount >= maxFail) {
+        await sleep(5000);
+        failCount = 0;
+        continue;
+      }
     }
+
+    await sleep(interval);
   }
 
-  return json_({ ok: true, service: "saju-intake", time: new Date().toISOString() });
+  stopTimer(false);
+  showError("분석이 완료되었을 수 있습니다.<br>아래 버튼을 눌러 결과를 다시 확인해 주세요.");
+  // 타임아웃 시 재조회 버튼 표시
+  showRetryPoll(name, phone, birthdate);
 }
 
 // =============================================
-// AI 분석 실행
+// 타임아웃 후 재조회 버튼
 // =============================================
-function runAiForRow_(sheet, rowIndex) {
-  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const col    = (name) => header.indexOf(name) + 1;
+function showRetryPoll(name, phone, birthdate) {
+  var errSection = document.getElementById("error-section");
+  var existing   = document.getElementById("retry-poll-btn");
+  if (existing) return;
 
-  const name         = sheet.getRange(rowIndex, col("이름")).getValue();
-  const birthdate    = sheet.getRange(rowIndex, col("생년월일")).getValue();
-  const birthtime    = sheet.getRange(rowIndex, col("출생시간")).getValue();
-  const calendarType = sheet.getRange(rowIndex, col("음양력")).getValue();
-  const gender       = sheet.getRange(rowIndex, col("성별")).getValue();
-  const memo         = sheet.getRange(rowIndex, col("메모")).getValue();
-
-  sheet.getRange(rowIndex, col("AI처리상태")).setValue("PENDING");
-
-  const prompt = buildSajuPrompt_({ name, birthdate, birthtime, calendarType, gender, memo });
-  const aiText = callOpenAI_(prompt);
-  const parsed = parseAiSections_(aiText);
-
-  sheet.getRange(rowIndex, col("사주요약")).setValue(parsed.summary         || "");
-  sheet.getRange(rowIndex, col("건강주의")).setValue(parsed.health          || "");
-  sheet.getRange(rowIndex, col("추천음식")).setValue(parsed.foods           || "");
-  sheet.getRange(rowIndex, col("피해야할음식")).setValue(parsed.avoid        || "");
-  sheet.getRange(rowIndex, col("상품추천키워드")).setValue(parsed.productKeywords || "");
-  sheet.getRange(rowIndex, col("홍보문구")).setValue(parsed.promo           || "");
-
-  sheet.getRange(rowIndex, col("AI처리상태")).setValue("DONE");
-  sheet.getRange(rowIndex, col("AI처리시간")).setValue(new Date());
-
-  return parsed;
-}
-
-// =============================================
-// 프롬프트 생성
-// =============================================
-function buildSajuPrompt_(d) {
-  const bd = d.birthdate instanceof Date
-    ? Utilities.formatDate(d.birthdate, "Asia/Seoul", "yyyy-MM-dd")
-    : String(d.birthdate || "").trim().replace(/^'/, "");
-  const bt = String(d.birthtime || "").trim();
-
-  return `당신은 한국어로 답하는 '사주 기반 라이프스타일 안내' 작성자입니다.
-아래 고객 입력을 바탕으로, 사주/오행을 "재미+참고용"으로만 해석해 주세요.
-의학적 진단/치료 표현은 금지하고, 생활 습관/식습관 조언 수준으로만 작성하세요.
-
-[고객 입력]
-- 이름: ${d.name}
-- 생년월일: ${bd}
-- 출생시간: ${bt ? bt : "(미입력)"}
-- 음양력: ${d.calendarType}
-- 성별: ${d.gender}
-- 메모: ${d.memo ? d.memo : "(없음)"}
-
-아래 섹션 제목을 정확히 사용하여 출력하세요. 섹션 제목은 반드시 대괄호로 감싸주세요:
-
-[사주요약]
-5~7줄, 성향/강점/주의점 중심으로 작성
-
-[건강주의]
-4~6줄, 생활습관 조언 중심(의학적 표현 금지)
-
-[추천음식]
-- 추천음식1: 이유
-- 추천음식2: 이유
-- 추천음식3: 이유
-- 추천음식4: 이유
-- 추천음식5: 이유
-
-[피해야할음식]
-- 음식1: 이유
-- 음식2: 이유
-- 음식3: 이유
-
-[상품추천키워드]
-키워드1, 키워드2, 키워드3
-
-[홍보문구]
-2~3문장으로 추천 음식/상품을 자연스럽게 안내(이모지/특수문자/해시태그 없이)`;
-}
-
-// =============================================
-// OpenAI Chat Completions 호출
-// =============================================
-function callOpenAI_(userPrompt) {
-  const apiKey = PropertiesService.getScriptProperties().getProperty("OPENAI_API_KEY");
-  if (!apiKey) throw new Error("OPENAI_API_KEY가 스크립트 속성에 없습니다.");
-
-  const url = "https://api.openai.com/v1/chat/completions";
-
-  const payload = {
-    model: OPENAI_MODEL,
-    messages: [{ role: "user", content: userPrompt }],
-    max_tokens: 1500
+  var btn = document.createElement("button");
+  btn.id        = "retry-poll-btn";
+  btn.className = "btn-retry";
+  btn.textContent = "결과 다시 확인하기";
+  btn.style.marginTop = "10px";
+  btn.onclick = async function() {
+    showSection("loading");
+    startTimer();
+    await pollResult(name, phone, birthdate);
   };
 
-  const res = UrlFetchApp.fetch(url, {
-    method: "post",
-    contentType: "application/json",
-    headers: { Authorization: "Bearer " + apiKey },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  });
-
-  const code = res.getResponseCode();
-  const body = res.getContentText();
-
-  if (code < 200 || code >= 300) {
-    throw new Error("OpenAI API 오류(" + code + "): " + body);
-  }
-
-  return JSON.parse(body).choices[0].message.content;
+  if (errSection) errSection.appendChild(btn);
 }
 
 // =============================================
-// ★ 강화된 파싱 함수 (v5)
+// 결과 렌더링
 // =============================================
-function parseAiSections_(text) {
-  Logger.log("=== AI 원본 응답 ===\n" + text);
+function renderResult(name, result) {
+  document.getElementById("result-name-label").textContent = name + "님의 사주 분석 결과입니다";
 
-  const get = (label) => {
-    // 패턴1: [섹션명] ... 다음 [섹션명] 전까지
-    const re1 = new RegExp("\\[" + label + "\\]\\s*([\\s\\S]*?)(?=\\s*\\[[^\\]]+\\]|$)", "i");
-    const m1 = text.match(re1);
-    if (m1 && m1[1].trim()) {
-      Logger.log(label + " → (패턴1) " + m1[1].trim().substring(0, 50));
-      return m1[1].trim();
-    }
-    Logger.log(label + " → 파싱 실패");
-    return "";
-  };
+  setCardContent("res-summary", result.summary);
+  setCardContent("res-health",  result.health);
+  setCardContent("res-foods",   result.foods);
+  setCardContent("res-avoid",   result.avoid);
 
-  return {
-    summary:         get("사주요약"),
-    health:          get("건강주의"),
-    foods:           get("추천음식"),
-    avoid:           get("피해야할음식"),
-    productKeywords: get("상품추천키워드"),
-    promo:           get("홍보문구")
-  };
+  var keywords  = result.productKeywords || "";
+  var keywordEl = document.getElementById("res-keywords");
+  keywordEl.innerHTML = keywords
+    .split(/[,\n·\-]/)
+    .map(function(k){ return k.trim(); })
+    .filter(function(k){ return k.length > 0; })
+    .map(function(k){ return '<span class="keyword-badge">' + k + '</span>'; })
+    .join(" ");
+
+  document.getElementById("res-promo").textContent = result.promo || "";
+  showSection("result");
+}
+
+function setCardContent(id, text) {
+  var el = document.getElementById(id);
+  if (!text) { el.innerHTML = "<p>-</p>"; return; }
+  var lines = text.split("\n").map(function(l){ return l.trim(); }).filter(function(l){ return l.length > 0; });
+  el.innerHTML = lines.map(function(line) {
+    return /^[-•*]/.test(line)
+      ? "<li>" + line.replace(/^[-•*]\s*/, "") + "</li>"
+      : "<p>" + line + "</p>";
+  }).join("").replace(/(<li>[\s\S]*?<\/li>)+/g, function(m){ return "<ul>" + m + "</ul>"; });
 }
 
 // =============================================
-// 오류 기록
+// 유틸
 // =============================================
-function writeAiError_(sheet, rowIndex, message) {
-  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const col    = (name) => header.indexOf(name) + 1;
-  sheet.getRange(rowIndex, col("AI처리상태")).setValue("ERROR");
-  sheet.getRange(rowIndex, col("AI처리시간")).setValue(new Date());
-  sheet.getRange(rowIndex, col("사주요약")).setValue("AI 처리 중 오류: " + message);
-}
-
-// =============================================
-// JSON 응답 유틸
-// =============================================
-function json_(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// =============================================
-// 테스트 함수들 (디버그용)
-// =============================================
-function testFetchPermission() {
-  UrlFetchApp.fetch("https://api.openai.com/v1/models", {
-    method: "get",
-    headers: { Authorization: "Bearer test" },
-    muteHttpExceptions: true
+function showSection(section) {
+  ["form","loading","result","error"].forEach(function(id) {
+    var el = document.getElementById(id + "-section");
+    if (el) el.classList.toggle("hidden", id !== section);
   });
 }
 
-function testOpenAI() {
-  const prompt = buildSajuPrompt_({
-    name: "테스트",
-    birthdate: "1969-10-20",
-    birthtime: "16:10",
-    calendarType: "양력",
-    gender: "남성",
-    memo: ""
-  });
-  const result = callOpenAI_(prompt);
-  Logger.log("=== 전체 응답 ===\n" + result);
-  const parsed = parseAiSections_(result);
-  Logger.log("=== 파싱 결과 ===");
-  Logger.log("사주요약: " + parsed.summary.substring(0, 50));
-  Logger.log("건강주의: " + parsed.health.substring(0, 50));
-  Logger.log("추천음식: " + parsed.foods.substring(0, 50));
+function showError(msg) {
+  document.getElementById("error-msg").innerHTML = msg;
+  showSection("error");
+}
+
+function resetForm() {
+  stopTimer(false);
+  // retry-poll-btn 있으면 제거
+  var btn = document.getElementById("retry-poll-btn");
+  if (btn) btn.remove();
+  document.getElementById("saju-form").reset();
+  showSection("form");
+}
+
+function sleep(ms) {
+  return new Promise(function(resolve){ setTimeout(resolve, ms); });
 }
