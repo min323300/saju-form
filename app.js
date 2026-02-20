@@ -1,5 +1,5 @@
 // 1) 아래 URL을 본인 Apps Script "웹 앱 배포 URL"로 바꾸세요.
-const APPS_SCRIPT_WEBAPP_URL = "PASTE_YOUR_WEBAPP_URL_HERE";
+const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwDiF7BF7IXFF1rs8woq8k9CezFhKZSJ38-NnCfwA82TVzroKY5FftD4JF1ZpEXGzK8/exec";
 
 const form = document.getElementById("sajuForm");
 const statusEl = document.getElementById("status");
