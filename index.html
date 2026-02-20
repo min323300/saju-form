@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>사주 입력 폼</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <h1>사주 상담 입력</h1>
+    <p class="desc">입력한 정보는 상담/분석용으로만 저장됩니다.</p>
+
+    <!-- 중요: action은 Apps Script Web App URL로 바꿔주세요 -->
+    <form id="sajuForm" method="POST" target="hidden_iframe">
+      <input type="hidden" name="source" value="github_pages" />
+
+      <div class="grid">
+        <label>
+          이름
+          <input name="name" type="text" placeholder="예) 홍길동" required />
+        </label>
+
+        <label>
+          전화번호
+          <input name="phone" type="tel" placeholder="예) 01012345678" required />
+        </label>
+
+        <label>
+          생년월일
+          <input name="birthdate" type="date" required />
+        </label>
+
+        <label>
+          출생시간(선택)
+          <input name="birthtime" type="time" />
+        </label>
+
+        <label>
+          양력/음력
+          <select name="calendar_type" required>
+            <option value="">선택</option>
+            <option value="solar">양력</option>
+            <option value="lunar">음력</option>
+          </select>
+        </label>
+
+        <label>
+          성별
+          <select name="gender" required>
+            <option value="">선택</option>
+            <option value="male">남</option>
+            <option value="female">여</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="full">
+        메모(선택)
+        <textarea name="memo" rows="4" placeholder="상담에서 참고할 내용을 적어주세요"></textarea>
+      </label>
+
+      <button class="btn" type="submit">저장하기</button>
+      <p id="status" class="status" aria-live="polite"></p>
+    </form>
+
+    <!-- 폼 제출용 iframe (CORS 없이 전송하기 위한 방식) -->
+    <iframe name="hidden_iframe" id="hidden_iframe" class="hidden"></iframe>
+
+    <footer class="footer">
+      <small>© Saju Intake</small>
+    </footer>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
