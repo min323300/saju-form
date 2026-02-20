@@ -1,14 +1,7 @@
-// =============================================
-// 설정: Apps Script 배포 URL
-// =============================================
 const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxH4yOePu4gZes7-Kdm7x3fWqd4X3G_OpmvmFRny0f3sKmNSQadV4TIOCEadTdJ5IMZ/exec";
 
-// =============================================
-// 전역 타이머 변수
-// =============================================
 var _timer = null;
 var _startTime = 0;
-
 var _stages = [
   { at: 0,  text: "입력 정보를 전송하고 있습니다..." },
   { at: 6,  text: "사주 오행을 분석하고 있습니다..." },
@@ -17,29 +10,32 @@ var _stages = [
   { at: 55, text: "마무리 정리 중입니다..." }
 ];
 
-// =============================================
-// 폼 제출 핸들러
-// =============================================
 document.getElementById("saju-form").addEventListener("submit", async function (e) {
   e.preventDefault();
 
-  var form        = e.target;
-  var name        = form.querySelector("[name=\"name\"]").value.trim();
-  var phone       = form.phone.value.trim();
-  var birthdate   = form.birthdate.value.trim();
-  var calType     = (form.querySelector('input[name="calendar_type"]:checked') || {}).value;
-  var gender      = (form.querySelector('input[name="gender"]:checked') || {}).value;
-  var birthtime   = form.birthtime.value.trim();
-  var memo        = form.memo.value.trim();
+  var form      = e.target;
+  var name      = form.querySelector('[name="name"]').value.trim();
+  var phone     = form.querySelector('[name="phone"]').value.trim();
+  var birthdateRaw = form.querySelector('[name="birthdate"]').value.trim();
+  var calType   = (form.querySelector('input[name="calendar_type"]:checked') || {}).value;
+  var gender    = (form.querySelector('input[name="gender"]:checked') || {}).value;
+  var birthtime = form.querySelector('[name="birthtime"]').value.trim();
+  var memo      = form.querySelector('[name="memo"]').value.trim();
 
-  if (!name || !phone || !birthdate || !calType || !gender) {
+  if (!name || !phone || !birthdateRaw || !calType || !gender) {
     alert("필수 항목을 모두 입력해 주세요.");
     return;
   }
 
+  // ★ 생년월일을 항상 yyyy-MM-dd 형식으로 정규화
+  var birthdate = normalizeDateStr(birthdateRaw);
+
+  // ★ 전화번호 정규화 (숫자만 추출 후 010-xxxx-xxxx 형식)
+  var phoneNorm = normalizePhone(phone);
+
   var ua = navigator.userAgent.substring(0, 200);
   var params = new URLSearchParams({
-    name: name, phone: phone, birthdate: birthdate, birthtime: birthtime,
+    name: name, phone: phoneNorm, birthdate: birthdate, birthtime: birthtime,
     calendar_type: calType, gender: gender, memo: memo,
     source: "github_pages", user_agent: ua
   });
@@ -48,22 +44,45 @@ document.getElementById("saju-form").addEventListener("submit", async function (
   startTimer();
 
   try {
-    // no-cors POST
     await fetch(APPS_SCRIPT_WEBAPP_URL, {
       method: "POST", mode: "no-cors",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params.toString()
     });
 
-    // POST 후 초기 대기 (모바일 고려해 3초로 단축)
-    await sleep(3000);
-    await pollResult(name, phone, birthdate);
+    await sleep(5000);
+    await pollResult(name, phoneNorm, birthdate);
 
   } catch (err) {
     stopTimer();
     showError("전송 오류가 발생했습니다.<br>" + err.message);
   }
 });
+
+// =============================================
+// 날짜 정규화: 어떤 형식이든 yyyy-MM-dd로 변환
+// =============================================
+function normalizeDateStr(str) {
+  if (!str) return "";
+  // 이미 yyyy-MM-dd 형식
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  // yyyy/MM/dd → yyyy-MM-dd
+  if (/^\d{4}\/\d{2}\/\d{2}$/.test(str)) return str.replace(/\//g, "-");
+  // 숫자만 있는 경우 yyyyMMdd → yyyy-MM-dd
+  if (/^\d{8}$/.test(str)) return str.substring(0,4)+"-"+str.substring(4,6)+"-"+str.substring(6,8);
+  return str;
+}
+
+// =============================================
+// 전화번호 정규화
+// =============================================
+function normalizePhone(phone) {
+  var digits = phone.replace(/[^0-9]/g, "");
+  if (digits.length === 11) {
+    return digits.substring(0,3) + "-" + digits.substring(3,7) + "-" + digits.substring(7,11);
+  }
+  return phone; // 변환 불가 시 원본 반환
+}
 
 // =============================================
 // 타이머
@@ -78,14 +97,11 @@ function startTimer() {
 function updateTimerUI() {
   var elapsed = Math.floor((Date.now() - _startTime) / 1000);
   var pct     = Math.min(92, Math.round((elapsed / 90) * 100));
-
   var barEl   = document.getElementById("progress-bar");
   var timeEl  = document.getElementById("elapsed-time");
   var stageEl = document.getElementById("loading-stage");
-
   if (barEl)   barEl.style.width = pct + "%";
   if (timeEl)  timeEl.textContent = elapsed + "초 경과";
-
   if (stageEl) {
     var msg = _stages[0].text;
     for (var i = 0; i < _stages.length; i++) {
@@ -104,14 +120,12 @@ function stopTimer(done) {
 }
 
 // =============================================
-// GET 폴링 - 모바일 최적화
-// 최대 35회 × 3초 간격 = 최대 105초 대기
+// GET 폴링 - 2초 간격, 60회 = 최대 120초
 // =============================================
 async function pollResult(name, phone, birthdate) {
-  var maxTry   = 35;   // 횟수 늘림 (기존 25)
-  var interval = 3000; // 간격 줄임 (기존 4000)
-  var failCount = 0;   // 네트워크 실패 카운트
-  var maxFail   = 5;   // 연속 실패 5회까지 허용
+  var maxTry   = 60;
+  var interval = 2000; // ★ 2초로 단축
+  var failCount = 0;
 
   for (var i = 0; i < maxTry; i++) {
     try {
@@ -123,7 +137,7 @@ async function pollResult(name, phone, birthdate) {
       var res  = await fetch(url);
       var data = await res.json();
 
-      failCount = 0; // 성공하면 실패 카운트 초기화
+      failCount = 0;
 
       if (data.ok && data.status === "DONE" && data.result) {
         stopTimer(true);
@@ -138,8 +152,7 @@ async function pollResult(name, phone, birthdate) {
 
     } catch (_) {
       failCount++;
-      // 연속 실패가 많으면 간격을 늘려서 재시도
-      if (failCount >= maxFail) {
+      if (failCount >= 5) {
         await sleep(5000);
         failCount = 0;
         continue;
@@ -150,21 +163,19 @@ async function pollResult(name, phone, birthdate) {
   }
 
   stopTimer(false);
-  showError("분석이 완료되었을 수 있습니다.<br>아래 버튼을 눌러 결과를 다시 확인해 주세요.");
-  // 타임아웃 시 재조회 버튼 표시
+  showError("분석이 완료되었을 수 있습니다.<br>아래 버튼을 눌러 결과를 확인해 주세요.");
   showRetryPoll(name, phone, birthdate);
 }
 
 // =============================================
-// 타임아웃 후 재조회 버튼
+// 재조회 버튼
 // =============================================
 function showRetryPoll(name, phone, birthdate) {
   var errSection = document.getElementById("error-section");
   var existing   = document.getElementById("retry-poll-btn");
   if (existing) return;
-
   var btn = document.createElement("button");
-  btn.id        = "retry-poll-btn";
+  btn.id = "retry-poll-btn";
   btn.className = "btn-retry";
   btn.textContent = "결과 다시 확인하기";
   btn.style.marginTop = "10px";
@@ -173,7 +184,6 @@ function showRetryPoll(name, phone, birthdate) {
     startTimer();
     await pollResult(name, phone, birthdate);
   };
-
   if (errSection) errSection.appendChild(btn);
 }
 
@@ -182,7 +192,6 @@ function showRetryPoll(name, phone, birthdate) {
 // =============================================
 function renderResult(name, result) {
   document.getElementById("result-name-label").textContent = name + "님의 사주 분석 결과입니다";
-
   setCardContent("res-summary", result.summary);
   setCardContent("res-health",  result.health);
   setCardContent("res-foods",   result.foods);
@@ -212,9 +221,6 @@ function setCardContent(id, text) {
   }).join("").replace(/(<li>[\s\S]*?<\/li>)+/g, function(m){ return "<ul>" + m + "</ul>"; });
 }
 
-// =============================================
-// 유틸
-// =============================================
 function showSection(section) {
   ["form","loading","result","error"].forEach(function(id) {
     var el = document.getElementById(id + "-section");
@@ -229,7 +235,6 @@ function showError(msg) {
 
 function resetForm() {
   stopTimer(false);
-  // retry-poll-btn 있으면 제거
   var btn = document.getElementById("retry-poll-btn");
   if (btn) btn.remove();
   document.getElementById("saju-form").reset();
