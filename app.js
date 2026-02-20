@@ -1,7 +1,7 @@
 // =============================================
 // 설정: Apps Script 배포 URL
 // =============================================
-const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwDiF7BF7IXFF1rs8woq8k9CezFhKZSJ38-NnCfwA82TVzroKY5FftD4JF1ZpEXGzK8/exec";
+const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxH4yOePu4gZes7-Kdm7x3fWqd4X3G_OpmvmFRny0f3sKmNSQadV4TIOCEadTdJ5IMZ/exec";
 
 // =============================================
 // 전역 타이머 변수
