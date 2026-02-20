@@ -24,7 +24,7 @@ document.getElementById("saju-form").addEventListener("submit", async function (
   e.preventDefault();
 
   var form        = e.target;
-  var name        = form.name.value.trim();
+  var name        = form.querySelector("[name=\"name\"]").value.trim();
   var phone       = form.phone.value.trim();
   var birthdate   = form.birthdate.value.trim();
   var calType     = (form.querySelector('input[name="calendar_type"]:checked') || {}).value;
