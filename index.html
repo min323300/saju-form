@@ -5,6 +5,134 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>나의 사주 분석</title>
   <link rel="stylesheet" href="style.css" />
+  <style>
+    /* =============================================
+       개인정보 동의 섹션 스타일
+       ============================================= */
+    .consent-section {
+      background: #fdf8f0;
+      border: 1.5px solid #d5c5b0;
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 18px;
+    }
+
+    .consent-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #5a3e2b;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #e8d9c5;
+    }
+
+    .consent-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .consent-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .consent-item input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      min-width: 18px;
+      margin-top: 2px;
+      accent-color: #b5894f;
+      cursor: pointer;
+    }
+
+    .consent-item label {
+      font-size: 0.88rem;
+      color: #555;
+      line-height: 1.6;
+      cursor: pointer;
+    }
+
+    .consent-item label .required-badge {
+      background: #c0392b;
+      color: white;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-right: 4px;
+    }
+
+    .consent-item label .optional-badge {
+      background: #7a9e7e;
+      color: white;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-right: 4px;
+    }
+
+    .consent-detail {
+      font-size: 0.8rem;
+      color: #999;
+      margin-top: 4px;
+      margin-left: 28px;
+      line-height: 1.5;
+    }
+
+    .consent-toggle {
+      color: #b5894f;
+      font-size: 0.8rem;
+      cursor: pointer;
+      text-decoration: underline;
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: inherit;
+    }
+
+    .consent-detail-box {
+      display: none;
+      background: #fff;
+      border: 1px solid #e0d0bb;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-top: 8px;
+      margin-left: 28px;
+      font-size: 0.8rem;
+      color: #666;
+      line-height: 1.7;
+    }
+
+    .consent-detail-box.show {
+      display: block;
+    }
+
+    .consent-all {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #e8d9c5;
+    }
+
+    .consent-all input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      min-width: 18px;
+      accent-color: #b5894f;
+      cursor: pointer;
+    }
+
+    .consent-all label {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #5a3e2b;
+      cursor: pointer;
+    }
+  </style>
 </head>
 <body>
 
@@ -48,6 +176,60 @@
         <label for="memo">메모 (궁금한 점 등)</label>
         <textarea id="memo" name="memo" rows="3" placeholder="예: 올해 운세가 궁금해요"></textarea>
       </div>
+
+      <!-- ===== ✅ 개인정보 동의 섹션 ===== -->
+      <div class="consent-section">
+        <div class="consent-title">📋 개인정보 수집 및 이용 동의</div>
+
+        <!-- 전체 동의 -->
+        <div class="consent-all">
+          <input type="checkbox" id="consent-all" />
+          <label for="consent-all">전체 동의하기</label>
+        </div>
+
+        <!-- 필수 동의 1 -->
+        <div class="consent-item">
+          <input type="checkbox" id="consent-required" required />
+          <div>
+            <label for="consent-required">
+              <span class="required-badge">필수</span>
+              개인정보 수집 및 이용에 동의합니다
+            </label>
+            <div class="consent-detail">
+              <button type="button" class="consent-toggle" onclick="toggleDetail('detail1')">내용 보기 ▼</button>
+              <div id="detail1" class="consent-detail-box">
+                <strong>수집 항목:</strong> 이름, 전화번호, 생년월일, 출생시간, 성별<br>
+                <strong>수집 목적:</strong> 사주 오행 AI 분석 서비스 제공<br>
+                <strong>보유 기간:</strong> 서비스 이용 종료 후 1년<br>
+                <strong>거부 권리:</strong> 동의를 거부할 수 있으나, 서비스 이용이 제한됩니다.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 선택 동의 (마케팅) -->
+        <div class="consent-item">
+          <input type="checkbox" id="consent-marketing" />
+          <div>
+            <label for="consent-marketing">
+              <span class="optional-badge">선택</span>
+              레딧플러스 마케팅 정보 수신에 동의합니다
+            </label>
+            <div class="consent-detail">
+              <button type="button" class="consent-toggle" onclick="toggleDetail('detail2')">내용 보기 ▼</button>
+              <div id="detail2" class="consent-detail-box">
+                <strong>활용 목적:</strong> 레딧플러스 이벤트, 할인 혜택, 신규 레시피 안내 문자 발송<br>
+                <strong>수신 채널:</strong> SMS 문자 메시지<br>
+                <strong>보유 기간:</strong> 동의 철회 시까지<br>
+                <strong>거부 권리:</strong> 동의를 거부하셔도 사주 분석 서비스 이용에 불이익이 없습니다.<br>
+                ※ 광고성 정보 수신 동의 후 언제든지 수신 거부 가능합니다.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- ===== 개인정보 동의 섹션 끝 ===== -->
+
       <button type="submit" id="submit-btn" class="btn-submit">분석 시작하기</button>
     </form>
   </div>
@@ -55,54 +237,37 @@
   <!-- ===== 로딩 섹션 ===== -->
   <div id="loading-section" class="container hidden">
     <div class="loading-wrap">
-
-      <!-- 안내 문구 -->
       <div class="loading-notice">
         🔮 AI가 사주를 분석하고 있습니다
         <span class="notice-sub">본 사주 분석은 인생의 참고와 재미로 활용하는 콘텐츠입니다</span>
       </div>
-
-      <!-- 단계 메시지 -->
       <p id="loading-stage" class="loading-stage">입력 정보를 전송하고 있습니다...</p>
-
-      <!-- 진행바 -->
       <div class="progress-track">
         <div id="progress-bar" class="progress-bar"></div>
       </div>
-
-      <!-- 경과 시간 -->
       <p id="elapsed-time" class="elapsed-time">0초 경과</p>
-
-      <!-- 예상 시간 안내 -->
       <p class="loading-hint">분석에는 약 30~60초가 소요됩니다.<br>잠시만 기다려 주세요 😊</p>
-
     </div>
   </div>
 
   <!-- ===== 결과 섹션 ===== -->
   <div id="result-section" class="container hidden">
-
-    <!-- 면책 배너 -->
     <div class="disclaimer-banner">
       ✨ 본 결과는 사주 오행을 바탕으로 한 <strong>재미와 참고용 콘텐츠</strong>입니다.<br>
       의학적 진단이나 인생의 결정 기준으로 사용하지 마세요.
     </div>
-
     <div class="result-header">
       <h2>✨ 사주 분석 결과</h2>
       <p id="result-name-label" class="result-subtitle"></p>
     </div>
-
     <div class="result-card">
       <h3 class="card-title">📜 사주 요약</h3>
       <div id="res-summary" class="card-body"></div>
     </div>
-
     <div class="result-card">
       <h3 class="card-title">💪 건강 주의사항</h3>
       <div id="res-health" class="card-body"></div>
     </div>
-
     <div class="result-row">
       <div class="result-card half">
         <h3 class="card-title">🍱 추천 음식</h3>
@@ -113,13 +278,11 @@
         <div id="res-avoid" class="card-body"></div>
       </div>
     </div>
-
     <div class="result-card promo-card">
       <h3 class="card-title">🛒 맞춤 상품 추천</h3>
       <div id="res-keywords" class="card-body keyword-wrap"></div>
       <div id="res-promo" class="promo-text"></div>
     </div>
-
     <button id="retry-btn" class="btn-retry" onclick="resetForm()">다시 분석하기</button>
   </div>
 
@@ -133,5 +296,49 @@
   </div>
 
   <script src="app.js"></script>
+  <script>
+    // =============================================
+    // 전체 동의 체크박스 연동
+    // =============================================
+    document.getElementById('consent-all').addEventListener('change', function() {
+      document.getElementById('consent-required').checked = this.checked;
+      document.getElementById('consent-marketing').checked = this.checked;
+    });
+
+    // 개별 체크박스 변경 시 전체동의 상태 업데이트
+    ['consent-required', 'consent-marketing'].forEach(function(id) {
+      document.getElementById(id).addEventListener('change', function() {
+        var allChecked =
+          document.getElementById('consent-required').checked &&
+          document.getElementById('consent-marketing').checked;
+        document.getElementById('consent-all').checked = allChecked;
+      });
+    });
+
+    // 상세 내용 토글
+    function toggleDetail(id) {
+      var el = document.getElementById(id);
+      el.classList.toggle('show');
+    }
+
+    // =============================================
+    // 폼 제출 시 필수 동의 검사
+    // =============================================
+    document.getElementById('saju-form').addEventListener('submit', function(e) {
+      if (!document.getElementById('consent-required').checked) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        alert('개인정보 수집 및 이용에 동의해 주세요. (필수)');
+        return false;
+      }
+      // 마케팅 동의 여부를 hidden input으로 전달
+      var marketing = document.getElementById('consent-marketing').checked ? 'Y' : 'N';
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'marketing_agree';
+      input.value = marketing;
+      this.appendChild(input);
+    }, true); // capture phase로 app.js보다 먼저 실행
+  </script>
 </body>
 </html>
